@@ -190,6 +190,8 @@ pub fn connect_req(agt: &mut Agent, r: &Registry) -> io::Result<()> {
         _ => return Err(Error::new(ErrorKind::InvalidData, "ATYP")),
     }
 
+    println!("{} <=> {}",agt.client_addr().unwrap() ,&addr);
+
     // Connect to Target Host.
     let s = TcpStream::connect(addr)?;
     s.set_nodelay(true)?;

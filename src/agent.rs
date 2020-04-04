@@ -2,6 +2,7 @@ use crate::buf::Buf;
 use crate::util;
 use mio::event::Event;
 use mio::net::TcpStream;
+use std::net::SocketAddr;
 use mio::*;
 use std::io;
 use std::io::Error;
@@ -67,8 +68,8 @@ impl Agent {
     }
 
     fn set_state(&mut self, state: State) {
-        // Open Logger.
-        println!("state: {:?} -> {:?}", self.state, state);
+        // Open Debug Logger.
+        // println!("state: {:?} -> {:?}", self.state, state);
         self.state = state;
     }
 
@@ -111,7 +112,12 @@ impl Agent {
         if e.is_error() {
             return Err(Error::new(ErrorKind::UnexpectedEof, "err"));
         }
-
+        
         Ok(())
     }
+    
+    pub fn client_addr(&self) -> io::Result<SocketAddr> {
+        self.s1.peer_addr()
+    }
+
 }
