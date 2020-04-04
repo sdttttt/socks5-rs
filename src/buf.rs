@@ -129,11 +129,13 @@ impl Buf {
 
     pub fn copy<R: Read, W: Write>(&mut self, r: &mut R, w: &mut W) -> io::Result<bool> {
         loop {
+            // Read to self from r.
             let ea = self.read(r)?;
             if self.len == 0 {
                 return Ok(ea);
             }
 
+            // Write to w from self.
             self.write(w)?;
             if self.len > 0 {
                 return Ok(true);

@@ -77,8 +77,10 @@ impl Agent {
         assert!(t == self.token || t == util::peer_token(self.token));
 
         // we can read from socket.
+        // 可读就意味着，有数据进来。
         if e.is_readable() {
             match self.state {
+                // 返回认证请求
                 SelectMethodReq => negotiate::select_method_req(self, r)?,
                 SelectMethodReply => (),
                 ConnectReq => negotiate::connect_req(self, r)?,
