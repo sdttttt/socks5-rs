@@ -13,12 +13,12 @@ use std::str;
 
 const VERSION: u8 = 0x05;
 
-pub fn select_method_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
+pub fn select_method_req(agt: &mut Agent, r: &Registry) -> io::Result<()> {
     // b is Buf.
-    let b = &mut c.b1;
+    let b = &mut agt.b1;
     // read bytes to b from TcpStream.
     // ea is Successful ?
-    let ea = b.read(&mut c.s1)?;
+    let ea = b.read(&mut agt.s1)?;
 
     // bytes length.
     let len = b.len();
@@ -72,29 +72,34 @@ pub fn select_method_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
 
      */
 
-    c.b2.write_u8(VERSION);
-    c.b2.write_u8(0);
+    // Version: 0x05
+    agt.b2.write_u8(VERSION);
+    // Status Successful: 0x00
+    agt.b2.write_u8(0);
 
     // Set Status to "Method Reply" 
-    c.set_state(State::SelectMethodReply);
-    select_method_reply(c, r)
+    agt.set_state(State::SelectMethodReply);
+    select_method_reply(agt, r)
 }
 
-pub fn select_method_reply(c: &mut Agent, r: &Registry) -> io::Result<()> {
-    // 将 Client TCPStream 的数据写入Client的buf2
-    c.b2.write(&mut c.s1)?;
-    if c.b2.len() > 0 {
+pub fn select_method_reply(agt: &mut Agent, r: &Registry) -> io::Result<()> {
+    // Client Connection Write to Buffer of Target Host.
+    // 将 客户端中连接的数据写入，目标代理连接的缓冲区中。
+    agt.b2.write(&mut agt.s1)?;
+    if agt.b2.len() > 0 {
         return Ok(()); // 还有剩余字节没写完，等待epollout
     }
 
     // 所有数据写完，进入下一状态
-    c.set_state(State::ConnectReq);
-    connect_req(c, r)
+    agt.set_state(State::ConnectReq);
+    connect_req(agt, r)
 }
 
-pub fn connect_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
-    let b = &mut c.b1;
-    let ea = b.read(&mut c.s1)?;
+pub fn connect_req(agt: &mut Agent, r: &Registry) -> io::Result<()> {
+    // Get buffer of Client.
+    let b = &mut agt.b1;
+    // Client Connection Write to Client Buffer.
+    let ea = b.read(&mut agt.s1)?;
 
     let len = b.len();
     if len == 0 && !ea {
@@ -115,10 +120,12 @@ pub fn connect_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
         return Ok(());
     }
 
+    // Not the Right Version.
     if b[0] != VERSION {
         return Err(Error::new(ErrorKind::InvalidData, "version"));
     }
 
+    // Muet be Connect request.
     if b[1] != 1 {
         return Err(Error::new(ErrorKind::InvalidData, "CMD must be CONNECT"));
     }
@@ -129,7 +136,9 @@ pub fn connect_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
 
     let addr: SocketAddr;
 
+    // b[3] is Address type.
     match b[3] {
+        // 1 is IPv4.
         1 => {
             if len < 4 + 4 + 2 {
                 return Ok(());
@@ -140,6 +149,7 @@ pub fn connect_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
             let port = b.read_u16();
             addr = (ip, port).into();
         }
+        // 4 is IPv6.
         4 => {
             if len < 4 + 16 + 2 {
                 return Ok(());
@@ -150,6 +160,7 @@ pub fn connect_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
             let port = b.read_u16();
             addr = (ip, port).into();
         }
+        // 3 is Domain.
         3 => {
             if len < 5 {
                 return Ok(());
@@ -175,22 +186,25 @@ pub fn connect_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
                 }
             }
         }
+        // Exception.
         _ => return Err(Error::new(ErrorKind::InvalidData, "ATYP")),
     }
 
+    // Connect to Target Host.
     let s = TcpStream::connect(addr)?;
     s.set_nodelay(true)?;
 
     r.register(
         &s,
-        Token(util::peer_token(c.token)),
+        Token(util::peer_token(agt.token)),
         Interests::READABLE | Interests::WRITABLE,
     )?;
 
-    c.s2 = Some(s);
+    // Set Connection.
+    agt.s2 = Some(s);
 
     /*
-
+    Successful Request to Client.
     +----+-----+-------+------+----------+----------+
     |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
     +----+-----+-------+------+----------+----------+
@@ -199,34 +213,41 @@ pub fn connect_req(c: &mut Agent, r: &Registry) -> io::Result<()> {
 
      */
 
-    assert_eq!(c.b2.len(), 0);
+    // Server Buffer lenght is Zero.
+    assert_eq!(agt.b2.len(), 0);
 
-    c.b2.write_u8(VERSION);
-    c.b2.write_u8(0);
-    c.b2.write_u8(0);
-    c.b2.write_u8(1); // ipv4
+    // VER
+    agt.b2.write_u8(VERSION);
+    // REP
+    agt.b2.write_u8(0);
+
+    // RSV
+    agt.b2.write_u8(0);
+    agt.b2.write_u8(1); // ipv4
 
     // ip
-    c.b2.write_u8(0);
-    c.b2.write_u8(0);
-    c.b2.write_u8(0);
-    c.b2.write_u8(0);
+    agt.b2.write_u8(0);
+    agt.b2.write_u8(0);
+    agt.b2.write_u8(0);
+    agt.b2.write_u8(0);
 
     // port
-    c.b2.write_u8(0);
-    c.b2.write_u8(0);
+    agt.b2.write_u8(0);
+    agt.b2.write_u8(0);
 
-    c.set_state(State::ConnectReply);
-    connect_reply(c, r)
+    // next State.
+    agt.set_state(State::ConnectReply);
+    connect_reply(agt, r)
 }
 
-pub fn connect_reply(c: &mut Agent, r: &Registry) -> io::Result<()> {
-    c.b2.write(&mut c.s1)?;
-    if c.b2.len() > 0 {
+pub fn connect_reply(agt: &mut Agent, r: &Registry) -> io::Result<()> {
+    // Client Connection Write to Server buffer.
+    agt.b2.write(&mut agt.s1)?;
+    if agt.b2.len() > 0 {
         return Ok(()); // 还有剩余字节没写完，等待epollout
     }
 
-    // 所有数据写完，进入下一状态
-    c.set_state(State::Relay);
-    relay::relay_in(c, r, c.token)
+    // next state.
+    agt.set_state(State::Relay);
+    relay::relay_in(agt, r, agt.token)
 }
